@@ -51,16 +51,36 @@ classification using Machine Learning techniques:
             b) Transformers
 """
 import sys
-sys.path.append("/mnt/d/VUT/Bachelor-thesis/02-Dataset-preprocessing/04-Feature-extraction")
-import pickle
+sys.path.append("/mnt/d/VUT/Bachelor-thesis" \
+                "/02-Dataset-preprocessing/" \
+                "04-Feature-extraction")
 import numpy as np
 import xgboost as xgb
-from extract_features import extract_features 
+from errors import Err
 from argparse import ArgumentParser
-from regex_classifier import RegexClassifier
-from stat_classifier import StatClassifier
+from stat_clf import StatClassifier
+from regex_clf import RegexClassifier
+from binary_dga_clf import BinaryClassifier
+from multiclass_dga_clf import MulticlassClassifier
+from extract_features import extract_features 
 
-if __name__ == "__main__":
+########################## CONSTANTS ###########################
+DGA: int = 1
+
+##################### FUNCTION DEFINITION ######################
+def process_input() -> list:
+    """
+    Function according to script arguments
+    reads the input domains intended for DGA classification.
+    The domains are read according to specified argument from:
+    1. File
+    2. Script argument
+    3. Stdin
+    Function returns the list of the read domains
+    
+    Returns:
+        list: The list of domains intended for classification 
+    """
     domains = []
     # 1. Process the input
     parser = ArgumentParser(description="DGA domain classifier")
@@ -79,54 +99,61 @@ if __name__ == "__main__":
     if args.file:
         with open(args.file, "r") as f:
             domains = [line.strip() for line in f]
-    
     # 1.2 If the domain  
     elif args.domain:
-        domains =[ domain.strip() for domain in args.domain]
+        domains = [ domain.strip() for domain in args.domain ]
     # 1.3 Else process domain from stdin
     else:
         print("Processing from stdin")
         lines = sys.stdin.readlines()
         domains = [line.strip() for line in lines]
-      
-    model_path = "/mnt/d/VUT/Bachelor-thesis/02-Dataset-preprocessing/04-Feature-extraction/model.pkl"
-    with open(model_path, 'rb') as f:
-        model = pickle.load(f)  
 
-    # 2. Call (ML) binary classifier for separation DGA and non DGA domains
-    # Init classifiers
-    # Regex
-    filepath = "/mnt/d/VUT/Bachelor-thesis/02-Dataset-preprocessing/01-Regex-classif/regexes.txt"
-    regex_clf = RegexClassifier(filepath)
-    stat_clf = StatClassifier("classif_matrix2")
+    return domains
+
+########################## MAIN ###########################
+def main():
+    # 1. Process the script input
+    domains = process_input()
+    if not domains:
+        print("No domains were entered", file=sys.stderr)
+        sys.exit(Err.EMPTY_INPUT)
     
+    # 2. Initialize classifiers
+    binary_model_path = "/mnt/d/VUT/Bachelor-thesis/05-Github/DGA-Classifier/03-Models/binary_model.pkl"
+    regex_model_path = "/mnt/d/VUT/Bachelor-thesis/02-Dataset-preprocessing/01-Regex-classif/regexes.txt"
+    stat_model_path = "/mnt/d/VUT/Bachelor-thesis/05-Github/DGA-Classifier/03-Models/classif_matrix"
+    xgboost_model_path = "/mnt/d/VUT/Bachelor-thesis/05-Github/DGA-Classifier/03-Models/multiclass_model.pkl"
+    
+    binary_clf = BinaryClassifier(binary_model_path)
+    regex_clf = RegexClassifier(regex_model_path)
+    stat_clf = StatClassifier(stat_model_path)
+    xgboost_clf = MulticlassClassifier(xgboost_model_path)
+    
+    # 3. Classify the given domains
     for domain in domains:
+        # 3.1 Extract domain features
         features = np.array(extract_features(domain)).reshape(1,-1)
-        print(features)
-        print(features.dtype)
+        # 3.2 BINARY CLASSIFICATION
+        dga_prediction = binary_clf.classify(features)
         
-        prediction = model.predict(features)
-        print(prediction)
-        if prediction == 1:
+        if dga_prediction == DGA:
             print(f"{domain}: DGA")
-            # 3. Call methods for classification
-            DGA_families = regex_clf.classify(domain)
-            DGA_family = stat_clf.classify_domain(features)
-            print(DGA_families)
-            print(DGA_family)
+            # 3.3 Multiclass classification
+            # REGEX
+            dga_families = regex_clf.classify(domain)
+            # STAT
+            dga_family_stat = stat_clf.classify_domain(features)
+            # XGBoost
+            dga_family_xgboost = xgboost_clf.classify(features)
+            
+            print(dga_families)
+            print(dga_family_stat)
+            print(dga_family_xgboost)
         else:
             print(f"{domain}: Legit")
             
-        
-    
-  
-    
-    
-    # 2. Call methods from regex classification module
-    # 3. Call machine learning models
-    # 3.1 
-    # 4. Return formatted result
-    
+if __name__ == "__main__":
+    main()
     
     
     
