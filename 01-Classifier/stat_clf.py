@@ -30,10 +30,17 @@ for the dga detection. Features are extracted from the
 domain and then are comapred to the mean values for 
 every known DGA family.
 """
+import sys
+sys.path.append("/mnt/d/VUT/Bachelor-thesis/05-Github/DGA-Classifier/02-Dataset-preprocessing/04-Feature-extraction")
 
 import numpy as np
 import pandas as pd
 from collections import Counter
+from known_tld import KnownTLD
+from n_grams import N_grams
+
+import dga_classif_features as dcf
+import extract_features as ef
 
 #1. Create stat classifier
 #2. Functions:
@@ -48,6 +55,10 @@ class StatClassifier:
     def __init__(self, filepath):
         #1. Get classif matrix
         self.__classif_matrix = None #Pandass dataframe
+        self.labels = dcf.get_labels(
+            "/mnt/c/Work/Bachelors-thesis/"\
+            "Dataset/DGA/Fraunhofer-dataset/"\
+            "dgarchive_datasets/01-Proportion-pick")
         # self.set_classif_matrix("classif_matrix2")
         self.set_classif_matrix(filepath)
         
@@ -98,7 +109,7 @@ class StatClassifier:
         """
         pass
     
-    def classify_domain(self, domain_features:np.ndarray[float]) -> str:
+    def classify(self, domain_features:np.ndarray[float]) -> str:
         """Instance method classifies the domain according to
         given features
 
@@ -121,11 +132,11 @@ class StatClassifier:
             row_name = deviations[column].idxmin()
             family_vector[column] = row_name
         
-        print(family_vector)
+        # print(family_vector)
         #3. Count the occurence of every family
-        print(family_vector.values())
+        # print(family_vector.values())
         family_counts = Counter(family_vector.values())
-        print(family_counts)
+        # print(family_counts)
         # Find the row index with the lowest deviation for each column
         # min_deviation_rows = np.argmin(deviations, axis=0)
         # get row names from dataframe for each index
@@ -139,12 +150,47 @@ class StatClassifier:
         #CLassification does not work
         # Find out how much
         # Solution use xgboost -> Combine see the result of the combination
-        return None
+        most_common_family = family_counts.most_common(1)[0][0]
+        return self.labels[most_common_family]
         
+    def predict(self, X):
+        """Instance method classifies the domain according to
+        given features
+
+        Args:
+            domain_features (np.ndarray[float]): Vector of extracted features
+
+        Returns:
+            str: Predicted DGA Family
+        """
+        print(self.labels)
+        predictions = [ self.classify(row) for index, row in X.iterrows()]
+        print(predictions)
+        return predictions
+        
+def main():
+    stat_model_dir = "/mnt/d/VUT/Bachelor-thesis/05-Github/DGA-Classifier/03-Models/statistical_classification/"
+    stat_model = "classif_matrix"
+    stat_model_path = stat_model_dir + stat_model
     
+    stat_clf = StatClassifier(stat_model_path)
+    
+    known_subdomain_path = "/mnt/c/Work/Bachelors-thesis/Dataset/Non-DGA/public_suffix_list.dat.txt"
+    tlds = KnownTLD(known_subdomain_path)
+    known_tlds = tlds.get_tlds()
+    
+    ngram_dir = "/mnt/d/VUT/Bachelor-thesis/05-Github/DGA-Classifier/03-Models/ngrams/"
+    dga_ngram_csv = ngram_dir + "dga-ngram.csv"
+    nondga_ngram_csv = ngram_dir + "non-dga-ngram.csv"
+    ngrams = N_grams(dga_ngram_csv=dga_ngram_csv, nondga_ngram_csv=nondga_ngram_csv)
+    
+    domain = "bde15d38ecc65c801a6ab50a59cea738.org"
+    features = np.array(ef.extract_features_2(domain, known_tlds, ngrams))
+    print(features)
+    print(stat_clf.get_classif_matrix())    
+    print(stat_clf.classify(features))
 if __name__=="__main__":
-    stat_classif = StatClassifier()
-    print(stat_classif.get_classif_matrix())
+    main()
     
         
         

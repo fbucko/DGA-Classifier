@@ -44,7 +44,9 @@ class RegexClassifier:
     """
     def __init__(self, filename) -> None:
         self.__dga_regex_df = None # Pandas dataframe
+        self.__dga_regex_families = set()
         self.read_regexes(filename)
+        self.read_regex_families()
         
     def read_regexes(self, filename:str) -> pd.DataFrame:
         """
@@ -58,11 +60,32 @@ class RegexClassifier:
             returns pandas dataframe.
         """
         # 1. Read DGA regex database from CSV file
-        columns = ["DGA Family", "Regex"]
+        columns = ["DGA Family", "Regex"] # Be careful on the header
         df = pd.read_csv(filename, names=columns)
         self.__dga_regex_df = df
+    
+    def read_regex_families(self) -> set:
+        """
+        Creates the set of all family names
+        that have regex from pandas dataframe column
+
+        Returns:
+            set: Set of all families that have regex
+        """
+        if self.__dga_regex_df is not None:
+            self.__dga_regex_families = set(self.__dga_regex_df["DGA Family"])
+            
+    def get_regex_families(self) -> set:
+        """
+        Returns the set of all family names
+        that have regex
         
-    def classify(self, domain:str) -> str:
+        Returns:
+            set: Set of all families that have regex
+        """
+        return self.__dga_regex_families
+    
+    def classify(self, domain:str) -> list:
         """
         Instance method for classifying domain with 
         regex matching.
@@ -76,39 +99,33 @@ class RegexClassifier:
             domain (str): Domain given for classification
         
         Returns:
-            int: If the domain was matched with one of the regexes,
-                 method returns DGA family.
-                 Else returns None.
+            list: Method returns the list of matched DGA families.
+                  If no families were matched, empty list is returned
         """
         # 1. Iterate through list of regexes
+        # Decide what are the possible scenarios:
+        # a) Use re.match() function
+        # b) Use re.search() function
+        # c) Use re.findall() function
+
+        matched_dga_set = set()
         for idx, regex in enumerate(self.__dga_regex_df["Regex"]):
             match = re.match(regex, domain)
             if match:
-                print("OK: Pattern found")
-                print(f"Family: {self.__dga_regex_df['DGA Family'].iloc[idx]}")
-            else:
-                pass
-                #print("BAD: Pattern not found ")
-            # 2. Try to match regex with given domain
-            # Decide what are the possible scenarios:
-            # a) Use re.match() function
-            # b) Use re.search() function
-            # c) Use re.findall() function
-        # 3. Check the result of matching
+                matched_dga_set.add(self.__dga_regex_df['DGA Family'].iloc[idx])
         
+        return matched_dga_set
         # PROBLEMS ->
         #   1. One domain matches multiple regexes, which one is correct?
-        #       -> The classification can't be complited the problem
+        #       -> The classification can't be completed, the problem
         #          will be passed to ML method, with the list of families.
         #          After that we will add values (from regex classification)
         #          to probability scores from ML classification
-        #   2. Regex matches also valid domains
-        
+   
 if __name__ == "__main__":
     print(" Regex classif Run from terminal")
     # filepath = "/mnt/d/VUT/Bachelor-thesis/Dataset/regexes.txt"
     filepath = "/mnt/d/VUT/Bachelor-thesis/02-Dataset-preprocessing/01-Regex-classif/regexes.txt"
-    
     classifier = RegexClassifier(filepath)
     # Bamital
     # classifier.classify("cd8f66549913a78c5a8004c82bcf6b01.info") 

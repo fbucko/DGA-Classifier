@@ -51,18 +51,22 @@ classification using Machine Learning techniques:
             b) Transformers
 """
 import sys
-sys.path.append("/mnt/d/VUT/Bachelor-thesis" \
-                "/02-Dataset-preprocessing/" \
-                "04-Feature-extraction")
+# sys.path.append("/mnt/d/VUT/Bachelor-thesis" \
+#                 "/02-Dataset-preprocessing/" \
+#                 "04-Feature-extraction")
+sys.path.append("/mnt/d/VUT/Bachelor-thesis/05-Github/DGA-Classifier/02-Dataset-preprocessing/04-Feature-extraction")
+
 import numpy as np
 import xgboost as xgb
 from errors import Err
+from known_tld import KnownTLD
+from n_grams import N_grams
 from argparse import ArgumentParser
 from stat_clf import StatClassifier
 from regex_clf import RegexClassifier
 from binary_dga_clf import BinaryClassifier
 from multiclass_dga_clf import MulticlassClassifier
-from extract_features import extract_features 
+from extract_features import extract_features_2
 
 ########################## CONSTANTS ###########################
 DGA: int = 1
@@ -119,20 +123,40 @@ def main():
         sys.exit(Err.EMPTY_INPUT)
     
     # 2. Initialize classifiers
-    binary_model_path = "/mnt/d/VUT/Bachelor-thesis/05-Github/DGA-Classifier/03-Models/binary_model.pkl"
-    regex_model_path = "/mnt/d/VUT/Bachelor-thesis/02-Dataset-preprocessing/01-Regex-classif/regexes.txt"
-    stat_model_path = "/mnt/d/VUT/Bachelor-thesis/05-Github/DGA-Classifier/03-Models/classif_matrix"
-    xgboost_model_path = "/mnt/d/VUT/Bachelor-thesis/05-Github/DGA-Classifier/03-Models/multiclass_model.pkl"
+    binary_model_dir = "/mnt/d/VUT/Bachelor-thesis/05-Github/DGA-Classifier/03-Models/binary_classification/"
+    regex_model_dir = "/mnt/d/VUT/Bachelor-thesis/05-Github/DGA-Classifier/03-Models/regex_classification/"
+    stat_model_dir = "/mnt/d/VUT/Bachelor-thesis/05-Github/DGA-Classifier/03-Models/statistical_classification/"
+    xgboost_model_dir ="/mnt/d/VUT/Bachelor-thesis/05-Github/DGA-Classifier/03-Models/multiclass_classification/"
+
+    binary_model = "binary_model_concat_labels.pkl"
+    regex_model = "regexes_labeled2.txt"
+    stat_model = "classif_matrix"
+    xgboost_model = "01_multiclass_model_subdomain.pkl"
+    
+    binary_model_path = binary_model_dir + binary_model
+    regex_model_path = regex_model_dir + regex_model
+    stat_model_path = stat_model_dir + stat_model
+    xgboost_model_path = xgboost_model_dir + xgboost_model
     
     binary_clf = BinaryClassifier(binary_model_path)
     regex_clf = RegexClassifier(regex_model_path)
     stat_clf = StatClassifier(stat_model_path)
     xgboost_clf = MulticlassClassifier(xgboost_model_path)
     
+    regex_families = regex_clf.get_regex_families()
+    known_subdomain_path = "/mnt/c/Work/Bachelors-thesis/Dataset/Non-DGA/public_suffix_list.dat.txt"
+    tlds = KnownTLD(known_subdomain_path)
+    known_tlds = tlds.get_tlds()
+    
+    ngram_dir = "/mnt/d/VUT/Bachelor-thesis/05-Github/DGA-Classifier/03-Models/ngrams/"
+    dga_ngram_csv = ngram_dir + "dga-ngram.csv"
+    nondga_ngram_csv = ngram_dir + "non-dga-ngram.csv"
+    ngrams = N_grams(dga_ngram_csv=dga_ngram_csv, nondga_ngram_csv=nondga_ngram_csv)
+    
     # 3. Classify the given domains
     for domain in domains:
         # 3.1 Extract domain features
-        features = np.array(extract_features(domain)).reshape(1,-1)
+        features = np.array(extract_features_2(domain, known_tlds, ngrams)).reshape(1,-1)
         # 3.2 BINARY CLASSIFICATION
         dga_prediction = binary_clf.classify(features)
         
@@ -140,15 +164,38 @@ def main():
             print(f"{domain}: DGA")
             # 3.3 Multiclass classification
             # REGEX
-            dga_families = regex_clf.classify(domain)
+            dga_families_set = regex_clf.classify(domain)
             # STAT
-            dga_family_stat = stat_clf.classify_domain(features)
+            # dga_family_stat = stat_clf.classify(features)
             # XGBoost
-            dga_family_xgboost = xgboost_clf.classify(features)
+            dga_families_xgboost = xgboost_clf.classify(features)
             
-            print(dga_families)
-            print(dga_family_stat)
-            print(dga_family_xgboost)
+            #ENSEMBLE MODEL (XGBoost + Regex + Stat)
+            classification_success = False
+            for xgboost_family in dga_families_xgboost:
+                # Check if the family is in regex database
+                if xgboost_family not in regex_families:
+                    #Family is in the DB
+                    print(f"{domain} - class: {xgboost_family}")
+                    classification_success = True
+                    break
+                if xgboost_family in dga_families_set:
+                    # Classification OK
+                    print(f"{domain} - class: {xgboost_family}")
+                    classification_success = True
+                    break
+                # The regex database doesn't contains classifed regex
+                # Assumption: Regexes are too genereal
+                #             and they should be matched in every scenario
+                # Choose the other family that is second most likely and so on...
+            
+            if not classification_success:
+                    print(f"{domain} - class: Unknown")
+            # print(dga_families_set)
+            # print(dga_family_stat)
+            # print(dga_families_xgboost)
+            
+
         else:
             print(f"{domain}: Legit")
             

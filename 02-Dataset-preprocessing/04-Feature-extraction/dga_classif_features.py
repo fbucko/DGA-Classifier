@@ -58,12 +58,22 @@ Selected features:
 import os
 import glob
 import pickle
+
+import numpy as np
 import pandas as pd
 import xgboost as xgb
-from extract_features import extract_features
-from sklearn.preprocessing import LabelEncoder
-from sklearn.model_selection import train_test_split, cross_val_score
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
+import seaborn as sns
+import plotly.subplots as sp
+import plotly.graph_objects as go
+import matplotlib.pyplot as plt
+
+
+from n_grams import N_grams
+from known_tld import KnownTLD
+from extract_features import extract_features_2
+from sklearn.preprocessing import LabelEncoder, MinMaxScaler
+from sklearn.model_selection import train_test_split, cross_val_score, StratifiedShuffleSplit, KFold
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, confusion_matrix, ConfusionMatrixDisplay
 
 def get_labels(dir_path:str) -> dict:
     """The function lists all the files in the given
@@ -89,10 +99,11 @@ def get_labels(dir_path:str) -> dict:
     suffix = ".csv"
     files = os.listdir(dir_path)
     dga_families = [ 
-        file[len(prefix):-len(suffix)]
+        file[len(prefix):-len(suffix)] # Remove prefix and suffix from filename
         for file in files
         if file.startswith(prefix)
     ]
+    dga_families.sort()
     # 2. Create the dicitionay with family names
     #    and assign labels to them
     families = {}
@@ -101,30 +112,138 @@ def get_labels(dir_path:str) -> dict:
     
     return families
 
-if __name__=="__main__":
-    # 1. Get the labels for every family to create the dataset
-    dir_path = "/mnt/c/Work/Bachelors-thesis/Dataset/DGA/Fraunhofer-dataset/dgarchive_datasets/02-Proportion-pick/"
-    family_labels = get_labels(dir_path)
-    
-    # 2. Read the files into dataframe and assign 
-    #    them the label, corresponding to the family
+def save_labels(labels: dict, filename: str):
+    """
+    Function saves generated labels for further
+    processing as part of the DGA classification
+    into pickle file.
+
+    Args:
+        labels (dict): labels that will be saved
+        filename (str): name of the pickle file
+    """
+    with open(filename, "wb") as f:
+        pickle.dump(labels, f)
+
+def read_and_label_dataset(dataset_dir:str, label_column:str):
+    """Function reads the files in specified directory.
+    Each file contains samples for a specific DGA family.
+    Since we want to combine all families into one dataframe,
+    we have to label them.
+
+    Args:
+        dataset_dir (str): _description_
+    """
     dfs = []
     prefix = "01-"
     suffix = ".csv"
-    file_list = glob.glob(dir_path + prefix + "*" + suffix)
+    family_labels = get_labels(dataset_dir)
+    file_list = glob.glob(dataset_dir + prefix + "*" + suffix)
     for file in file_list:
         # 3. Assign the labels
         filename = os.path.basename(file)
-        family = filename[len(prefix):-len(suffix)]
-        label = family_labels[family]
+        family = filename[len(prefix):-len(suffix)] # Remove prefix and suffix from filename
+        label = family_labels[family] 
         df = pd.read_csv(file, names=["domain"])
-        df["dga_family"] = label                
+        df[label_column] = label                
         dfs.append(df)
     
-    df = pd.concat(dfs, ignore_index=True)
+    return pd.concat(dfs, ignore_index=True) #concatenated dataframe
+
+def visualize_confusion_matrix(confusion_matrix:np.ndarray):
+    # 1. Create heatmap for confusion matrix
+    # plt.figure(figsize=(30, 30))  # specify a larger figure size
+    # sns.heatmap(confusion_matrix, annot=True, cmap="YlGnBu", cbar=False)
+    # plt.xlabel('Predicted')
+    # plt.ylabel('Actual')
+    # plt.title('Confusion Matrix')
+    # plt.show()
+    # Define a diagonal-only plot using Plotly
+    ticks=np.linspace(0, 92,num=93)
+    plt.figure(figsize=(20,15))
+    plt.imshow(confusion_matrix, interpolation='none')
+    plt.colorbar()
+    plt.xticks(ticks,fontsize=6)
+    plt.yticks(ticks,fontsize=6)
+    plt.grid(True)
+    plt.show()
+
+def k_fold_cros_val_multiclass(model, X, y, num_folds):
+    # define the k-fold cross-validation object
+    kfold = KFold(n_splits=num_folds, shuffle=True, random_state=42)
+
+    # perform k-fold cross-validation and return the accuracy scores
+    scores = cross_val_score(model, X, y, cv=kfold, scoring='accuracy')
+
+    # print the mean and standard deviation of the accuracy scores
+    print("Accuracy: %0.2f (+/- %0.2f)" % (scores.mean(), scores.std() * 2))
     
-    # 4. Compute the features- use parallel processing for each chunk
-    feature_values = df['domain'].apply(extract_features)
+
+def visualize_confusion_matrix_2(confusion_matrix:np.ndarray):
+    # 1. Create heatmap for confusion matrix
+    # plt.figure(figsize=(30, 30))  # specify a larger figure size
+    # sns.heatmap(confusion_matrix, annot=True, cmap="YlGnBu", cbar=False)
+    # plt.xlabel('Predicted')
+    # plt.ylabel('Actual')
+    # plt.title('Confusion Matrix')
+    # plt.show()
+    # Define a diagonal-only plot using Plotly
+    # print(confusion_matrix)
+    
+    total_per_class = np.sum(confusion_matrix, axis=1)
+
+    # calculate the number of misclassified instances per class
+    misclassified_per_class = total_per_class - np.diag(confusion_matrix)
+
+    # calculate the misclassification rate per class
+    misclassification_rate_per_class = misclassified_per_class / total_per_class
+
+    # print the misclassification rate per class
+    number_of_classes = confusion_matrix.shape[0]
+    print(number_of_classes)
+    for i in range(number_of_classes):
+        print(f"Class {i}: {misclassification_rate_per_class[i]:.2%}")
+    
+    ticks=np.linspace(0, number_of_classes - 1,num=number_of_classes)
+    # plt.figure(figsize=(20,15))
+    # plt.imshow(confusion_matrix, interpolation='none')
+    # plt.colorbar()
+    # plt.xticks(ticks,fontsize=6)
+    # plt.yticks(ticks,fontsize=6)
+    # plt.grid(True)
+    # plt.show()
+    cm_normalized = np.round(confusion_matrix/np.sum(confusion_matrix, axis=1).reshape(-1,1),2)
+    sns.heatmap(cm_normalized,
+                cmap="Greens",
+                annot=False,
+                xticklabels=ticks,
+                yticklabels=ticks)
+    plt.xlabel("Predicted")
+    plt.ylabel("Actual")
+    plt.show()
+    
+def main():
+    # 1. Get the labels for every family to create the dataset
+    dir_path = "/mnt/c/Work/Bachelors-thesis/Dataset/DGA/Fraunhofer-dataset/dgarchive_datasets/02-Proportion-pick/"
+    family_labels = get_labels(dir_path)
+    labels_path = "dga_model_labels.pkl"
+    save_labels(family_labels, labels_path)
+    
+    # 2. Read the files into dataframe and assign 
+    #    them the label, corresponding to the family
+    df = read_and_label_dataset(dir_path, label_column="dga_family")
+    
+    # 4. Compute the features - use parallel processing for each chunk
+    known_subdomain_path = "/mnt/c/Work/Bachelors-thesis/Dataset/Non-DGA/public_suffix_list.dat.txt"
+    tlds = KnownTLD(known_subdomain_path)
+    known_tlds = tlds.get_tlds()
+    
+     
+    ngram_dir = "/mnt/d/VUT/Bachelor-thesis/05-Github/DGA-Classifier/03-Models/ngrams/"
+    dga_ngram_csv = ngram_dir + "dga-ngram.csv"
+    nondga_ngram_csv = ngram_dir + "non-dga-ngram.csv"
+    ngrams = N_grams(dga_ngram_csv=dga_ngram_csv, nondga_ngram_csv=nondga_ngram_csv)
+    feature_values = df['domain'].apply(lambda x:extract_features_2(x, known_tlds, ngrams))
     
     # convert the list of feature values into a pandas dataframe
     feature_names = ["domain_len",
@@ -137,44 +256,41 @@ if __name__=="__main__":
         "consonant_ratio",
         "non_alfa_ratio",
         "hex_ratio",
+        "dictionary_match",
+        "dga_ngram_ratio",
+        "nondga_ngram_ratio",
         "first_digit_flag",
-        "norm_entropy"]
+        "well_known_tld",
+        "norm_entropy",
+        "subdomains_count",
+        "www_flag"] 
     feature_df = pd.DataFrame(feature_values.tolist(), columns=feature_names)
 
     # concatenate the feature dataframe with the original dataframe
     final_df = pd.concat([df, feature_df], axis=1)
     print(final_df)
-    
     # 5. Train the model    
     # CREATE XGBOOST MODEL
-    model_name = "multiclass_model.pkl"
+    model_name = "01_multiclass_model_subdomain.pkl"
     # Split the data
-    X = final_df[["domain_len",
-        "tld_len",
-        "sld_len",
-        "max_consonant_len",
-        "sld_digits_len",
-        "unique_chars",
-        "digit_ratio",
-        "consonant_ratio",
-        "non_alfa_ratio",
-        "hex_ratio",
-        "first_digit_flag",
-        "norm_entropy"]]
+    X = final_df[feature_names]
     y = final_df["dga_family"]
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, stratify=y)
+    
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.5, stratify=y, shuffle=True)
+    
+    train_unique = sorted(y_train.unique())
+    test_unique = sorted(y_test.unique())
+    print(train_unique)
+    print(test_unique)
     
     if not os.path.isfile(model_name):
         print("The model does not exist, creating one")
-        
-    
-
         # X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
         # le = LabelEncoder()
         # y_train = le.fit_transform(y_train)
         
         # Train the XGBoost model
-        params = {'objective': 'multi:softmax', 'num_class': 93, 'max_depth': 3, 'learning_rate': 0.2, 'n_estimators': 100}
+        params = {'objective': 'multi:softmax', 'num_class': 93, 'max_depth': 3, 'learning_rate': 0.05, 'n_estimators': 100}
         model = xgb.XGBClassifier(**params)
         model.fit(X_train, y_train)
         
@@ -189,22 +305,72 @@ if __name__=="__main__":
         with open(model_name, 'rb') as f:
             model = pickle.load(f)
     
+    xgb.plot_importance(model)
+    
+
+    k_fold_cros_val_multiclass(model, X, y, num_folds=5)
+    
     # 6. Evaluate the model
     y_pred = model.predict(X_test)
     accuracy = accuracy_score(y_test, y_pred)
-    precision = precision_score(y_test, y_pred, average="weighted")
-    recall = recall_score(y_test, y_pred, average="weighted")
-    f1 = f1_score(y_test, y_pred, average="weighted")
-    # roc_auc = roc_auc_score(y_test, y_pred, multi_class="over", average="macro")
+    precision = precision_score(y_test, y_pred, average="weighted", zero_division=1)
+    recall = recall_score(y_test, y_pred, average="weighted", zero_division=1)
+    f1 = f1_score(y_test, y_pred, average="weighted", zero_division=1)
+    cm = confusion_matrix(y_test, y_pred)
+    # roc_auc = roc_auc_score(y_test, model.predict_proba(X_test), multi_class='ovr') # Specify multi-class strategy as 'ovr'
     
+    # get gain score
+    # clf je XGBClassifier
+    score = model.get_booster().get_score(importance_type='gain')
+    sorted_score = sorted(score.items(), key=lambda x: x[1], reverse=True)
+    print(sorted_score)    
+    
+    # Get importance scores
+    # Get importance scores from the trained XGBoost model
+    score = model.get_booster().get_score(importance_type='gain')
+
+    # Normalize importance scores using Min-Max scaling
+    # Convert the score dictionary to a list of tuples
+    score_list = list(score.items())
+
+    # # Sort the score list in descending order of importance scores
+    sorted_score = sorted(score_list, key=lambda x: x[1], reverse=True)
+
+    # # Extract the feature names and importance scores from the sorted score list
+    feature_names = [x[0] for x in sorted_score]
+    importance_scores = [x[1] for x in sorted_score]
+
+    # # Initialize MinMaxScaler
+    scaler = MinMaxScaler()
+
+    # # Reshape importance scores to be a 2D array
+    importance_scores = np.array(importance_scores).reshape(-1, 1)
+
+    # # Scale importance scores using Min-Max scaling
+    importance_scores_normalized = scaler.fit_transform(importance_scores)
+
+    # # Flatten the normalized importance scores to a 1D array
+    importance_scores_normalized = importance_scores_normalized.flatten()
+
+    # Print normalized feature importances along with the original feature names
+    # Print normalized feature importances along with the original feature names in descending order
+    for i, importance_score in enumerate(importance_scores_normalized.argsort()[::-1]):
+        print(f"Feature {i+1}: {feature_names[importance_score]} - Importance Score: {importance_scores_normalized[importance_score]}")
+        
     # scores = cross_val_score(model, X, y, cv=5)
     print('Accuracy:', accuracy)
     print('Precision:', precision)
     print('Recall:', recall)
     print('F1 score:', f1)
+    # visualize_confusion_matrix(cm)
+    visualize_confusion_matrix_2(cm)
     # print('ROC AUC:', roc_auc)
     # print('Scores:', scores.mean())
 
     #Export model to file
     # with open('model.pkl', 'wb') as f:
         # pickle.dump(model, f)
+
+if __name__=="__main__":
+    main()
+    # visualize_confusion_matrix("nice")

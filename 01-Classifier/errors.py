@@ -36,3 +36,5 @@ class Err:
     
     #ERROR_CODES
     EMPTY_BINARY_CLF:int = 21
+    EMPTY_MULTICLASS_CLF:int = 22
+    EMPTY_MULTICLASS_LABELS:int = 23

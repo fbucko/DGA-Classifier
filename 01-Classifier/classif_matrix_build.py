@@ -35,11 +35,15 @@ of the extracted features from the DGA dataset
 
 import os
 import sys
-sys.path.append("/mnt/d/VUT/Bachelor-thesis/02-Dataset-preprocessing/04-Feature-extraction")
-from extract_features import extract_features 
 import psutil
 import numpy as np
 import pandas as pd
+
+sys.path.append("/mnt/d/VUT/Bachelor-thesis/05-Github/DGA-Classifier/02-Dataset-preprocessing/04-Feature-extraction")
+from n_grams import N_grams
+from known_tld import KnownTLD
+from extract_features import extract_features, extract_features_2
+
 
 def fit_memory(filepath:str) -> bool:
     """
@@ -76,6 +80,25 @@ def get_classsif_matrix():
     which contains mean values of features for all families
     """
     path = "/mnt/c/Work/Bachelors-thesis/Dataset/DGA/Fraunhofer-dataset/dgarchive_full/"
+    feature_columns = ["domain_len",
+        "tld_len",
+        "sld_len",
+        "max_consonant_len",
+        "sld_digits_len",
+        "unique_chars",
+        "digit_ratio",
+        "consonant_ratio",
+        "non_alfa_ratio",
+        "hex_ratio",
+        "dictionary_match",
+        "dga_ngram_ratio",
+        "nondga_ngram_ratio",
+        "first_digit_flag",
+        "well_known_tld",
+        "norm_entropy",
+        "subdomains_count",
+        "www_flag"] 
+    
     for file in os.listdir(path):
         if file.endswith('.csv'):
             file_path = os.path.join(path, file)
@@ -88,18 +111,7 @@ def get_classsif_matrix():
                                  usecols=[0],
                                  names=["domain"])
                 print(df)
-                df[["domain_len",
-                    "tld_len",
-                    "sld_len",
-                    "max_consonant_len",
-                    "sld_digits_len",
-                    "unique_chars",
-                    "digit_ratio",
-                    "consonant_ratio",
-                    "non_alfa_ratio",
-                    "hex_ratio",
-                    "first_digit_flag",
-                    "norm_entropy"]] = df["domain"].apply(extract_features).apply(pd.Series)
+                df[feature_columns] = df["domain"].apply(extract_features).apply(pd.Series)
                 print(df.mean())
                 print(df)
             else:
@@ -112,18 +124,7 @@ def get_classsif_matrix():
                                          chunksize=100_000,
                                          header=None,
                                          usecols=[0]):
-                    chunk[["domain_len",
-                    "tld_len",
-                    "sld_len",
-                    "max_consonant_len",
-                    "sld_digits_len",
-                    "unique_chars",
-                    "digit_ratio",
-                    "consonant_ratio",
-                    "non_alfa_ratio",
-                    "hex_ratio",
-                    "first_digit_flag",
-                    "norm_entropy"]] = chunk.iloc[:,0].apply(extract_features).apply(pd.Series)
+                    chunk[feature_columns] = chunk.iloc[:,0].apply(extract_features).apply(pd.Series)
                     # Compute the sum and count of each feature in the current chunk
                     chunk_sums = chunk.sum()
                     chunk_counts = chunk.count()
@@ -137,12 +138,46 @@ def get_classsif_matrix():
                         sums += chunk_sums
                         counts += chunk_counts
 
+def init_known_tld():
+    known_subdomain_path = "/mnt/c/Work/Bachelors-thesis/Dataset/Non-DGA/public_suffix_list.dat.txt"
+    tlds = KnownTLD(known_subdomain_path)
+    return tlds.get_tlds()
+    
+def init_n_grams():
+    ngram_dir = "/mnt/d/VUT/Bachelor-thesis/05-Github/DGA-Classifier/03-Models/ngrams/"
+    dga_ngram_csv = ngram_dir + "dga-ngram.csv"
+    nondga_ngram_csv = ngram_dir + "non-dga-ngram.csv"
+    return N_grams(dga_ngram_csv=dga_ngram_csv, nondga_ngram_csv=nondga_ngram_csv)
+    
 def get_classsif_matrix2():
     """Function creates classification matrix
     which contains mean values of features for all families
     """
     mean_df = pd.DataFrame()
     path = "/mnt/c/Work/Bachelors-thesis/Dataset/DGA/Fraunhofer-dataset/dgarchive_full/"
+    
+    feature_columns = ["domain_len",
+        "tld_len",
+        "sld_len",
+        "max_consonant_len",
+        "sld_digits_len",
+        "unique_chars",
+        "digit_ratio",
+        "consonant_ratio",
+        "non_alfa_ratio",
+        "hex_ratio",
+        "dictionary_match",
+        "dga_ngram_ratio",
+        "nondga_ngram_ratio",
+        "first_digit_flag",
+        "well_known_tld",
+        "norm_entropy",
+        "subdomains_count",
+        "www_flag"] 
+    
+    known_tlds = init_known_tld()
+    ngrams = init_n_grams()
+    
     for file in os.listdir(path):
         if file.endswith('.csv'):
             file_path = os.path.join(path, file)    
@@ -153,18 +188,7 @@ def get_classsif_matrix2():
                                  names=["domain"],
                                  nrows=260_000)
             # 2. Extract features
-            df[["domain_len",
-                    "tld_len",
-                    "sld_len",
-                    "max_consonant_len",
-                    "sld_digits_len",
-                    "unique_chars",
-                    "digit_ratio",
-                    "consonant_ratio",
-                    "non_alfa_ratio",
-                    "hex_ratio",
-                    "first_digit_flag",
-                    "norm_entropy"]] = df["domain"].apply(extract_features).apply(pd.Series)
+            df[feature_columns] = df["domain"].apply(lambda x: extract_features_2(x, known_tlds, ngrams)).apply(pd.Series)
             # 3. Compute mean values
             feature_means = df.mean(numeric_only=True)
             mean_df[os.path.splitext(file)[0]] = feature_means

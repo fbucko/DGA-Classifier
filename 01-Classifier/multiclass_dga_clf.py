@@ -53,7 +53,9 @@ class MulticlassClassifier:
             model_path (str): Path to the binary model
         """
         self.__model = None
+        self.__labels = {}
         self.read_model(model_path)
+        self.read_labels()
         
     def read_model(self, model_path: str):
         """
@@ -70,7 +72,60 @@ class MulticlassClassifier:
                                         f"{model_path}"
         except AssertionError as err:
             print(err, file=sys.stderr)
-            sys.exit(Err.EMPTY_BINARY_CLF)
+            sys.exit(Err.EMPTY_MULTICLASS_CLF)
+    
+    def get_labels(self) -> dict:
+        """
+        The method returns the names of the families
+        with the associated labels that are used when
+        training the model
+
+        Returns:
+            dict: Dictionary of the family names with associated labels
+        """
+        return self.__labels
+    
+    def read_labels(self) -> dict:
+        """
+        Read labels which were generated while
+        creating model for decoding model output
+
+        Args:
+            labels_file (str): file where labels are stored
+        """
+        labels_path = "/mnt/d/VUT/Bachelor-thesis/05-Github/" \
+                      "DGA-Classifier/03-Models/multiclass_classification/dga_model_labels.pkl"
+                      
+        with open(labels_path, "rb") as f:
+            # read the dictionary of the labels
+            self.__labels = pickle.load(f)
+        
+        try:
+            assert self.__labels != None, "Unable to read labels from specified path:\n" \
+                                        f"{labels_path}"
+            # print(self.__labels)
+        except AssertionError as err:
+            print(err, file=sys.stderr)
+            sys.exit(Err.EMPTY_MULTICLASS_LABELS)
+             
+    def labels_to_families(self, labels: list[int]) -> list:
+        """
+        Method maps a list of integers(labels) that correspond
+        to individual dga families and returns the list of mapped families.
+
+        Args:
+            labels (list[int]): List of labels
+
+        Returns:
+            list: List of family names
+        """
+        labels_dict = self.get_labels()
+        families = [key 
+                    for label in labels 
+                        for key, value in labels_dict.items()
+                            if label == value
+        ]
+        return families
     
     def classify(self, domain_features:np.ndarray[float]) -> dict:
         """
@@ -84,5 +139,16 @@ class MulticlassClassifier:
         Returns:
             dict: Dictionary where keys are families and values are probabilities
         """
-        print(self.__model.predict_proba(domain_features))
-        return self.__model.predict(domain_features)
+        # print(self.__model.predict_proba(domain_features))
+        # print(self.__model.classes_)
+        # 1. Get predicted probabilities for each label
+        probabilities = self.__model.predict_proba(domain_features)
+        # 2. Get sorted indices of labels according to probabilities
+        sorted_indices = np.argsort(-probabilities, axis=1)
+        # 3. Get labels sorted according to probabilities
+        sorted_labels = self.__model.classes_[sorted_indices]
+        # 4. Reduce the array dimensionality
+        sorted_labels = np.squeeze(sorted_labels)
+        # 5. Convert labels to family names
+        return self.labels_to_families(sorted_labels)
+        
